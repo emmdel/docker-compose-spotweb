@@ -1,0 +1,45 @@
+version: 2
+
+networks:
+  default:
+    external:
+      name: load_balancing
+
+services:
+
+  spotweb:
+    labels:
+      - "traefik.frontend.rule=Host:$SPOTWEB_HOST"
+      - "traefik.frontend.entrypoint=http"
+      - "traefik.frontend.passHostHeader=true"
+      - "traefik.port=80"
+
+  mysql:
+    image: mariadb
+    env_file:
+      - .env
+    volumes:
+      - ./data/mysql/data:/var/lib/mysql
+      - ./data/mysql/dumps:/dumps
+    ports:
+      - "3306"
+    command: "mysqld \
+      --innodb_file_per_table=1 \
+      --innodb_flush_neighbors=0 \
+      --innodb_log_buffer_size=8MB \
+      --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci"
+
+  cron:
+    image: jgeusebroek/spotweb
+    volumes_from:
+      - spotweb
+    depends_on:
+      - mysql
+    entrypoint: |
+      bash -c 'bash -s <<EOF
+      trap "break;exit" SIGHUP SIGINT SIGTERM
+      while /bin/true; do
+        sleep 600
+        su -s "/bin/bash" -c "/usr/bin/php /var/www/spotweb/retrieve.php >/dev/null 2>&1"
+      done
+      EOF'
